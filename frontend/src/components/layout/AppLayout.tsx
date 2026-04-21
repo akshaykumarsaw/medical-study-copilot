@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem('arivu_token');
@@ -16,9 +17,11 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
     } else {
       setIsAuthorized(true);
     }
+    setIsLoading(false);
   }, [router]);
 
-  if (!isAuthorized) {
+  // If we are definitely not authorized (redirecting), show a subtle full screen loader
+  if (isLoading && !isAuthorized) {
     return (
       <div className="h-screen w-screen bg-parchment flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-medical-teal border-t-transparent rounded-full animate-spin"></div>
@@ -32,7 +35,11 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar />
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
-          {children}
+          {isAuthorized ? children : (
+            <div className="flex items-center justify-center h-full">
+              <div className="w-8 h-8 border-4 border-medical-teal border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
         </main>
       </div>
     </div>
