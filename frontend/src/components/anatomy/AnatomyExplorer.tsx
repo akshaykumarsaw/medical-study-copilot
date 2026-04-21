@@ -65,20 +65,50 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
   const initSvg = useCallback((container: HTMLDivElement | null) => {
     if (!container) return;
     const svg = container.querySelector('svg');
-    if (!svg) return;
+    if (!svg || svg.dataset.initialized === 'true') return;
+    svg.dataset.initialized = 'true';
 
-    // Remove visibility:hidden that makes it invisible
+    // 1. Remove visibility restrictions from ALL elements in the SVG
     svg.removeAttribute('visibility');
     svg.style.visibility = 'visible';
     svg.style.overflow   = 'visible';
+    svg.querySelectorAll('[visibility="hidden"]').forEach(el => el.removeAttribute('visibility'));
+    svg.querySelectorAll('[style*="visibility:hidden"], [style*="visibility: hidden"]').forEach(el => {
+      (el as HTMLElement).style.visibility = 'visible';
+    });
 
-    // Apply default warm fills to every UBERON element
-    const organs = svg.querySelectorAll('[id^="UBERON"]');
-    organs.forEach(el => {
+    // 2. Disable pointer events for all background layers/outlines by default
+    svg.querySelectorAll('*').forEach(el => {
+      (el as HTMLElement).style.pointerEvents = 'none';
+    });
+
+    // 3. Strip inline none fills/strokes from all UBERON elements and their children so they inherit
+    const allUberonElements = svg.querySelectorAll('[id^="UBERON"]');
+    allUberonElements.forEach(uberon => {
+      // Re-enable pointer events only for UBERON elements
+      (uberon as HTMLElement).style.pointerEvents = 'all';
+      
+      const descendants = uberon.querySelectorAll('*');
+      descendants.forEach(child => {
+        const htmlChild = child as HTMLElement;
+        htmlChild.style.pointerEvents = 'all';
+        if (htmlChild.style.fill === 'none') htmlChild.style.fill = '';
+        if (htmlChild.style.stroke === 'none') htmlChild.style.stroke = '';
+        child.removeAttribute('fill');
+        child.removeAttribute('stroke');
+      });
+    });
+
+    // 4. Apply default warm fills to every UBERON element
+    allUberonElements.forEach(el => {
       const id = el.id;
       const fill = ORGAN_DATABASE[id] ? C.defaultFill : C.unknown;
       applyStyle(el, fill, C.defaultStroke);
       el.setAttribute('cursor', 'pointer');
+      
+      // Ensure the UBERON element itself doesn't have an inline fill="none" attribute blocking inheritance
+      el.removeAttribute('fill');
+      el.removeAttribute('stroke');
     });
 
     // Wire events
@@ -145,12 +175,13 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
 
   // ── Re-init when view switches ───────────────────────────────────────────
   useEffect(() => {
-    // Small timeout to let dangerouslySetInnerHTML render
+    // Initialise both SVGs safely on mount to prevent double listeners
     const timer = setTimeout(() => {
-      initSvg(view === 'body' ? bodyRef.current : brainRef.current);
-    }, 80);
+      initSvg(bodyRef.current);
+      initSvg(brainRef.current);
+    }, 150);
     return () => clearTimeout(timer);
-  }, [view, initSvg]);
+  }, [initSvg]);
 
   // ── Navigate to a related structure ─────────────────────────────────────
   const navigateTo = (id: string) => {
