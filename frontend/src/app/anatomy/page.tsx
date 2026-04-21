@@ -3,7 +3,7 @@ import { join } from 'path';
 import AnatomyPageClient from './client';
 
 export const metadata = {
-  title: 'Anatomy Explorer | ARIVU',
+  title: 'Anatomy Explorer | Arivu',
   description: 'Interactive anatomy explorer with UBERON ontology, clinical data, and physiological functions.',
 };
 

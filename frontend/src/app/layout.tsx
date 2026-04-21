@@ -21,7 +21,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ARIVU | AI Study Copilot for Medical Students",
+  title: "Arivu | AI Study Copilot for Medical Students",
   description: "An AI-powered solo study copilot for Indian medical students. Transform your textbooks and notes into an interactive learning engine.",
 };
 

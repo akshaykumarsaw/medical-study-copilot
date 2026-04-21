@@ -161,7 +161,7 @@ export default function TutorPage() {
         </form>
         <div className="text-center mt-2 px-4">
           <p className="text-[10px] text-medical-muted">
-            ARIVU can make mistakes in diagnosis suggestions. Always verify with actual medical protocols.
+            Arivu can make mistakes in diagnosis suggestions. Always verify with actual medical protocols.
           </p>
         </div>
       </div>

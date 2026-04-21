@@ -76,7 +76,7 @@ export const LoginForm = () => {
         </div>
 
         <Button type="submit" className="w-full h-12 text-lg group" isLoading={isLoading}>
-          Login to ARIVU
+          Login to Arivu
           <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
         </Button>
 
