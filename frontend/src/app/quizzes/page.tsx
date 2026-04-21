@@ -106,7 +106,7 @@ export default function QuizzesPage() {
     return (
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-serif font-bold text-medical-brown">Quiz Arena</h1>
+          <h1 className="text-3xl font-sans font-bold text-medical-brown tracking-tight">Quiz Arena</h1>
           <div className="flex gap-2">
             <Button
               variant={phase === 'setup' ? 'primary' : 'outline'}
@@ -123,7 +123,7 @@ export default function QuizzesPage() {
 
         {phase === 'setup' ? (
           <div className="medical-card p-8 space-y-6">
-            <h2 className="text-xl font-serif font-bold text-medical-brown">Configure Your Quiz</h2>
+            <h2 className="text-xl font-sans font-bold text-medical-brown tracking-tight">Configure Your Quiz</h2>
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-medical-brown/80">Subject</label>
@@ -333,7 +333,7 @@ export default function QuizzesPage() {
 
         {/* Detailed review */}
         <div className="space-y-4">
-          <h2 className="text-xl font-serif font-bold text-medical-brown">Answer Review</h2>
+          <h2 className="text-xl font-sans font-bold text-medical-brown tracking-tight">Answer Review</h2>
           {results.results.map((r, i) => (
             <div key={i} className={`medical-card p-5 border-l-4 ${r.is_correct ? 'border-l-green-500' : 'border-l-red-500'}`}>
               <div className="flex items-start gap-3 mb-3">
