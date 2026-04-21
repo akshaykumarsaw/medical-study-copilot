@@ -73,7 +73,7 @@ export default function TutorPage() {
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="font-serif font-bold text-medical-brown text-lg">Clinical AI Tutor</h2>
+            <h2 className="font-serif font-bold text-medical-brown text-lg">AI Tutor</h2>
             <p className="text-xs text-medical-muted">Always ready to discuss cases & concepts</p>
           </div>
         </div>
