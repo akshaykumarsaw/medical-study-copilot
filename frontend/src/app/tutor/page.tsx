@@ -64,7 +64,7 @@ export default function TutorPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] max-w-4xl mx-auto rounded-xl border border-medical-brown/10 bg-white/50 backdrop-blur-sm shadow-sm overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-8rem)] max-w-7xl mx-auto rounded-xl border border-medical-brown/10 bg-white/50 backdrop-blur-sm shadow-sm overflow-hidden">
       
       {/* Header */}
       <div className="p-4 border-b border-medical-brown/10 bg-parchment flex items-center justify-between">
@@ -99,7 +99,7 @@ export default function TutorPage() {
           messages.map((msg) => (
             <div 
               key={msg.id} 
-              className={`flex gap-4 max-w-[80%] ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
+              className={`flex gap-4 max-w-[90%] ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
             >
               <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center shadow-sm ${
                 msg.role === 'user' ? 'bg-medical-brown text-white' : 'bg-medical-teal text-white'
@@ -119,7 +119,7 @@ export default function TutorPage() {
         )}
         
         {isLoading && (
-          <div className="flex gap-4 max-w-[80%]">
+          <div className="flex gap-4 max-w-[90%]">
             <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center shadow-sm bg-medical-teal text-white">
               <Bot className="w-4 h-4" />
             </div>

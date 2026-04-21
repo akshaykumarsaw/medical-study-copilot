@@ -104,7 +104,7 @@ export default function QuizzesPage() {
   // ── SETUP PHASE ──────────────────────────────────────────────────────────────
   if (phase === 'setup' || phase === 'history') {
     return (
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-serif font-bold text-medical-brown">Quiz Arena</h1>
           <div className="flex gap-2">
@@ -220,7 +220,7 @@ export default function QuizzesPage() {
     const isAnswered = selectedAnswers[currentIndex] !== undefined;
 
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         {/* Progress header */}
         <div className="flex items-center justify-between">
           <div className="text-sm text-medical-muted font-medium">
@@ -306,7 +306,7 @@ export default function QuizzesPage() {
     const gradeBg = pct >= 70 ? 'bg-green-50 border-green-200' : pct >= 50 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200';
 
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         {/* Score card */}
         <div className={`medical-card p-8 text-center border-2 ${gradeBg}`}>
           <Trophy className={`w-12 h-12 mx-auto mb-3 ${scoreColor}`} />
