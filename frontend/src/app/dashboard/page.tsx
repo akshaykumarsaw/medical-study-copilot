@@ -96,7 +96,7 @@ export default function DashboardPage() {
           <h2 className="text-lg font-serif font-bold mb-4 text-medical-brown">Study Activity (Last 7 Days)</h2>
           {/* Fixed: explicit pixel height fixes recharts width/height=-1 warning */}
           <div style={{ width: '100%', height: 256 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <BarChart data={activity} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e1db" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#7a7974' }} dy={10} />
