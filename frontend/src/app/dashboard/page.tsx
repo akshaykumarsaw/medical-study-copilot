@@ -18,6 +18,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      // 1. Guard: Don't even try if we aren't logged in (prevents infinite spinners)
+      const token = localStorage.getItem('arivu_token');
+      if (!token) return;
+
       try {
         setLoading(true);
         const [sumRes, actRes, weakRes] = await Promise.all([
@@ -25,12 +29,17 @@ export default function DashboardPage() {
           dashboardService.getActivity(),
           dashboardService.getWeakTopics()
         ]);
+        
         setSummary(sumRes);
-        setActivity(actRes);
-        setWeakTopics(weakRes);
-      } catch (err) {
+        setActivity(actRes || []);
+        setWeakTopics(weakRes || []);
+        setError(null);
+      } catch (err: any) {
         console.error('Failed to fetch dashboard data', err);
-        setError('Failed to load dashboard data. Please try again.');
+        // Only set error if we haven't been redirected by the interceptor
+        if (err.response?.status !== 401) {
+          setError('We couldn\'t load your study data right now. The server might be busy.');
+        }
       } finally {
         setLoading(false);
       }

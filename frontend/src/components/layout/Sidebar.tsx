@@ -32,7 +32,7 @@ export const Sidebar = () => {
     <div className="w-64 bg-parchment border-r border-medical-brown/10 h-full flex flex-col hidden md:flex">
       <div className="p-6">
         <h1 className="text-2xl font-serif font-bold text-medical-teal flex items-center gap-2">
-          <Activity className="w-6 h-6" /> ARIVU
+          <Activity className="w-6 h-6" /> Arivu
         </h1>
       </div>
       
@@ -59,7 +59,7 @@ export const Sidebar = () => {
       </nav>
 
       <div className="p-4 border-t border-medical-brown/10 text-xs text-center text-medical-muted font-sans">
-        ARIVU Beta v2.1
+        Arivu Beta v2.1
       </div>
     </div>
   );
