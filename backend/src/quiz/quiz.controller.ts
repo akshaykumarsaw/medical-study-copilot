@@ -14,7 +14,15 @@ export class QuizController {
     @Body('numQuestions') numQuestions: number,
     @Body('difficulty') difficulty: string,
   ) {
-    return this.quizService.generateQuiz(req.user.id, subject, numQuestions || 5, difficulty || 'mixed');
+    return this.quizService.generateQuiz(req.user.userId, subject, numQuestions || 5, difficulty || 'mixed');
+  }
+
+  @Post('generate-targeted')
+  async generateTargeted(
+    @Req() req: any,
+    @Body('numQuestions') numQuestions: number,
+  ) {
+    return this.quizService.generateWeakAreaQuiz(req.user.userId, numQuestions || 5);
   }
 
   @Post(':id/submit')

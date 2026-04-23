@@ -172,10 +172,72 @@ export class QuizService {
 
     return {
       quiz_id: quiz.id,
-      questions: questionsForClient, // no correct answers sent to client
+      questions: questionsForClient,
       total: selected.length,
       subject: subject || 'Mixed',
       difficulty,
+    };
+  }
+
+  async generateWeakAreaQuiz(userId: string, numQuestions: number = 5) {
+    const supabase = this.supabaseService.getClient();
+    
+    // 1. Get bottom 5 weak topics
+    const { data: weakTopics } = await supabase
+      .from('topic_mastery')
+      .select('subject, topic, mastery_score')
+      .eq('user_id', userId)
+      .lt('mastery_score', 60)
+      .order('mastery_score', { ascending: true })
+      .limit(5);
+
+    if (!weakTopics || weakTopics.length === 0) {
+      // Fallback to random if no weak topics found yet
+      return this.generateQuiz(userId, 'all', numQuestions);
+    }
+
+    // 2. Filter bank for these topics
+    const topicsList = weakTopics.map(t => t.topic.toLowerCase());
+    let pool = QUESTION_BANK.filter(q => topicsList.includes(q.topic.toLowerCase()));
+
+    if (pool.length < numQuestions) {
+      // Add some random ones if pool too small
+      pool = [...pool, ...QUESTION_BANK.filter(q => !topicsList.includes(q.topic.toLowerCase()))];
+    }
+
+    // 3. Common generation logic
+    const shuffled = pool.sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, Math.min(numQuestions, shuffled.length));
+
+    const questionsForClient = selected.map(q => ({
+      question: q.question,
+      options: q.options,
+      subject: q.subject,
+      topic: q.topic,
+      difficulty: q.difficulty,
+    }));
+
+    const { data: quiz, error } = await supabase
+      .from('quizzes')
+      .insert({
+        user_id: userId,
+        subject: 'Weak Areas',
+        topic: null,
+        questions: selected,
+        total: selected.length,
+        difficulty: 'mixed',
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`Failed to create targeted quiz: ${error.message}`);
+
+    return {
+      quiz_id: quiz.id,
+      questions: questionsForClient,
+      total: selected.length,
+      subject: 'Weak Areas (Targeted)',
+      difficulty: 'mixed',
     };
   }
 

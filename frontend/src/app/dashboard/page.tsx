@@ -2,43 +2,46 @@
 
 import React, { useEffect, useState } from 'react';
 import { dashboardService } from '@/services/dashboard.service';
+import { analyticsService } from '@/services/analytics.service';
+import { quizService } from '@/services/quiz.service';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { Target, CheckCircle2, TrendingUp, Activity, AlertCircle, ArrowRight } from 'lucide-react';
+import { Target, CheckCircle2, TrendingUp, Activity, AlertCircle, ArrowRight, Zap, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [summary, setSummary] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
-  const [weakTopics, setWeakTopics] = useState<any[]>([]);
+  const [mastery, setMastery] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingTargeted, setIsGeneratingTargeted] = useState(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      // 1. Guard: Don't even try if we aren't logged in (prevents infinite spinners)
       const token = localStorage.getItem('arivu_token');
       if (!token) return;
 
       try {
         setLoading(true);
-        const [sumRes, actRes, weakRes] = await Promise.all([
+        const [sumRes, actRes, masteryRes] = await Promise.all([
           dashboardService.getSummary(),
           dashboardService.getActivity(),
-          dashboardService.getWeakTopics()
+          analyticsService.getMastery()
         ]);
         
         setSummary(sumRes);
         setActivity(actRes || []);
-        setWeakTopics(weakRes || []);
+        setMastery(masteryRes);
         setError(null);
       } catch (err: any) {
         console.error('Failed to fetch dashboard data', err);
-        // Only set error if we haven't been redirected by the interceptor
         if (err.response?.status !== 401) {
-          setError('We couldn\'t load your study data right now. The server might be busy.');
+          setError('Could not load study data.');
         }
       } finally {
         setLoading(false);
@@ -47,6 +50,18 @@ export default function DashboardPage() {
 
     fetchDashboardData();
   }, []);
+
+  const handleStartTargetedQuiz = async () => {
+    setIsGeneratingTargeted(true);
+    try {
+      const quiz = await quizService.generateTargeted();
+      router.push(`/quizzes/${quiz.quiz_id}`);
+    } catch (err) {
+      alert('Failed to generate targeted quiz. Try taking some regular quizzes first!');
+    } finally {
+      setIsGeneratingTargeted(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -113,26 +128,32 @@ export default function DashboardPage() {
         {/* Action Suggestions & Weak Topics */}
         <div className="space-y-6">
           
-          <div className="medical-card p-6 bg-medical-teal/5 border-medical-teal/20">
-            <h2 className="text-lg font-serif font-bold mb-3 text-medical-teal flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" /> Suggested Actions
+          <div className="medical-card p-6 bg-red-50/30 border-red-100">
+            <h2 className="text-lg font-serif font-bold mb-3 text-red-700 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" /> Targeted Revision
             </h2>
             {loading ? (
               <div className="space-y-2">
                 <div className="h-4 w-full skeleton" />
-                <div className="h-4 w-3/4 skeleton" />
                 <div className="h-8 w-full skeleton mt-4" />
               </div>
-            ) : (
+            ) : mastery?.weakTopics?.length > 0 ? (
               <div className="space-y-3 mt-4 text-sm">
-                <p className="flex items-start gap-2 text-medical-brown/80">
-                  <span className="w-1.5 h-1.5 rounded-full bg-medical-teal mt-1.5 shrink-0" />
-                  You haven&apos;t reviewed Pharmacology in 7 days — take a quick quiz.
+                <p className="text-medical-brown/80">
+                  You have <b>{mastery.stats.weakTopicsCount}</b> weak areas identified. Focus on {mastery.weakTopics[0].topic} to improve your score.
                 </p>
-                <Link href="/quizzes">
-                  <Button size="sm" variant="outline" className="w-full mt-2 text-xs h-8">Start Quiz</Button>
-                </Link>
+                <Button 
+                  onClick={handleStartTargetedQuiz} 
+                  disabled={isGeneratingTargeted}
+                  className="w-full mt-2 bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+                >
+                  <Zap className="w-4 h-4 fill-white" />
+                  {isGeneratingTargeted ? 'Generating...' : 'Practice Weak Areas'}
+                </Button>
+                <Link href="/errors" className="block text-center text-xs text-medical-muted underline p-1">View Recent Mistakes</Link>
               </div>
+            ) : (
+              <p className="text-sm text-medical-muted mt-2">Take more quizzes to identify areas for improvement.</p>
             )}
           </div>
 
@@ -150,9 +171,9 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            ) : weakTopics.length > 0 ? (
+            ) : mastery?.weakTopics?.length > 0 ? (
               <div className="space-y-3">
-                {weakTopics.map((topic, i) => (
+                {mastery.weakTopics.map((topic: any, i: number) => (
                   <div key={i} className="flex items-center justify-between group p-2 hover:bg-black/5 rounded-md transition-colors">
                     <div>
                       <p className="text-sm font-medium text-medical-brown">{topic.topic}</p>

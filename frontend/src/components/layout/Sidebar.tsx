@@ -11,7 +11,8 @@ import {
   Settings, 
   BookOpen, 
   CalendarDays,
-  Activity
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { name: 'Mind Maps', href: '/mindmaps', icon: Network },
   { name: 'Anatomy', href: '/anatomy', icon: Activity },
   { name: 'My Documents', href: '/documents', icon: BookOpen },
+  { name: 'Error Log', href: '/errors', icon: AlertCircle },
   { name: 'Exam Planner', href: '/planner', icon: CalendarDays },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

@@ -13,13 +13,14 @@ export class AuthService {
 
   async register(registerDto: RegisterDto) {
     const { email, password, name, college, programme, year } = registerDto;
+    const normalizedEmail = email.toLowerCase();
     const supabase = this.supabaseService.getClient();
 
     // Check if user exists
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
 
     if (existingUser) {
@@ -31,7 +32,7 @@ export class AuthService {
     const { data: newUser, error } = await supabase
       .from('users')
       .insert({
-        email,
+        email: normalizedEmail,
         password_hash: hashedPassword,
         name,
         college,
@@ -51,12 +52,13 @@ export class AuthService {
 
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
+    const normalizedEmail = email.toLowerCase();
     const supabase = this.supabaseService.getClient();
 
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
 
     if (error || !user) {

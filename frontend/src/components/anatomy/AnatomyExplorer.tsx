@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { ORGAN_DATABASE, OrganData, View } from './organData';
 
-// ── Colour constants ──────────────────────────────────────────────────────────
+// ── Colour constants ───────────────────────────────────────────────────────────
 const C = {
   defaultFill:   '#c9b99a',
   defaultStroke: '#8b7355',
@@ -14,224 +14,223 @@ const C = {
   unknown:       '#b0a898',
 };
 
-// ── Web-Audio helpers ─────────────────────────────────────────────────────────
-let audioCtx: AudioContext | null = null;
-function getAudio() {
-  if (!audioCtx) audioCtx = new AudioContext();
-  return audioCtx;
-}
-function tone(freq: number, dur: number, vol: number, detune = 0) {
-  const ctx = getAudio();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain); gain.connect(ctx.destination);
-  osc.frequency.value = freq;
-  if (detune) osc.detune.value = detune;
-  gain.gain.setValueAtTime(vol, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-  osc.start(); osc.stop(ctx.currentTime + dur);
-}
-function playHover()  { tone(1100, 0.08, 0.04); }
-function playSelect() { tone(440, 0.22, 0.07); tone(660, 0.22, 0.04, 3); }
-function playTab()    { tone(700, 0.06, 0.03); }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function applyStyle(el: Element, fill: string, stroke: string) {
-  (el as HTMLElement).style.fill        = fill;
-  (el as HTMLElement).style.stroke      = stroke;
-  (el as HTMLElement).style.strokeWidth = '0.4';
-  (el as HTMLElement).style.transition  = 'fill 0.15s, stroke 0.15s';
+// ── Apply fill/stroke to an SVG element ───────────────────────────────────────
+function applyFill(el: Element, fill: string, stroke: string) {
+  const s = (el as SVGElement).style;
+  s.fill        = fill;
+  s.stroke      = stroke;
+  s.strokeWidth = '0.4';
+  s.transition  = 'fill 0.15s, stroke 0.15s';
 }
 
+/**
+ * Pure DOM-styling pass: overrides the EBI SVG default `fill:none;stroke:none`
+ * on every UBERON group. NO event listeners attached here — all events use
+ * React synthetic handlers on the container div.
+ */
+function initSvgStyles(svg: SVGSVGElement) {
+  svg.querySelectorAll('[id^="UBERON"]').forEach(el => {
+    const g = el as SVGElement;
+
+    // Clear the entire inline style (which ships as "fill:none;stroke:none")
+    g.style.cssText = '';
+    g.removeAttribute('fill');
+    g.removeAttribute('stroke');
+
+    // Also clear any child paths that have fill:none
+    el.querySelectorAll('path, ellipse, circle, rect, polygon').forEach(child => {
+      const ch = child as SVGElement;
+      const style = ch.getAttribute('style') || '';
+      if (ch.style.fill === 'none' || style.includes('fill:none')) {
+        ch.style.cssText = '';
+      }
+      if (ch.getAttribute('fill') === 'none') ch.removeAttribute('fill');
+      if (ch.getAttribute('stroke') === 'none') ch.removeAttribute('stroke');
+    });
+
+    const isKnown = !!ORGAN_DATABASE[el.id];
+    applyFill(el, isKnown ? C.defaultFill : C.unknown, isKnown ? C.defaultStroke : '#8a7a66');
+    if (isKnown) g.style.cursor = 'pointer';
+  });
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface TooltipState { visible: boolean; x: number; y: number; label: string; }
-
 const tabs = ['Overview', 'Function', 'Clinical', 'Related'] as const;
 type Tab = typeof tabs[number];
-
 interface Props { bodySvg: string; brainSvg: string; soundEnabled: boolean; }
 
-export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
+// ── Component ─────────────────────────────────────────────────────────────────
+export function AnatomyExplorer({ bodySvg, brainSvg }: Props) {
   const [view, setView]           = useState<View>('body');
   const [selected, setSelected]   = useState<OrganData | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const [tooltip, setTooltip]     = useState<TooltipState>({ visible: false, x: 0, y: 0, label: '' });
 
-  const bodyRef  = useRef<HTMLDivElement>(null);
-  const brainRef = useRef<HTMLDivElement>(null);
-  const hoveredId = useRef<string | null>(null);
+  const bodyRef    = useRef<HTMLDivElement>(null);
+  const brainRef   = useRef<HTMLDivElement>(null);
+  const hoveredId  = useRef<string | null>(null);
   const selectedId = useRef<string | null>(null);
+  const initDone   = useRef({ body: false, brain: false });
+  // Use a ref for view so event handlers don't go stale
+  const viewRef    = useRef<View>('body');
 
-  // ── Initialise an SVG container after mount ──────────────────────────────
-  const initSvg = useCallback((container: HTMLDivElement | null) => {
-    if (!container) return;
-    const svg = container.querySelector('svg');
-    if (!svg || svg.dataset.initialized === 'true') return;
-    svg.dataset.initialized = 'true';
+  // Keep viewRef in sync
+  useEffect(() => { viewRef.current = view; }, [view]);
 
-    // 1. Remove visibility restrictions from ALL elements in the SVG
-    svg.removeAttribute('visibility');
-    svg.style.visibility = 'visible';
-    svg.style.overflow   = 'visible';
-    svg.querySelectorAll('[visibility="hidden"]').forEach(el => el.removeAttribute('visibility'));
-    svg.querySelectorAll('[style*="visibility:hidden"], [style*="visibility: hidden"]').forEach(el => {
-      (el as HTMLElement).style.visibility = 'visible';
+  // Stable HTML strings — prevents React replacing the SVG DOM on every re-render
+  const bodyHtml  = useMemo(() => bodySvg.replace(/<svg/, '<svg style="max-height:580px;width:100%;height:auto;"'), [bodySvg]);
+  const brainHtml = useMemo(() => brainSvg.replace(/<svg/, '<svg style="max-height:580px;width:100%;height:auto;"'), [brainSvg]);
+
+  // ── Style-only init (no events) ───────────────────────────────────────────
+  useEffect(() => {
+    const doInit = (container: HTMLDivElement | null, key: 'body' | 'brain') => {
+      if (!container || initDone.current[key]) return;
+      const svg = container.querySelector('svg') as SVGSVGElement | null;
+      if (!svg) return;
+      initDone.current[key] = true;
+      initSvgStyles(svg);
+    };
+    const raf = requestAnimationFrame(() => {
+      doInit(bodyRef.current, 'body');
+      doInit(brainRef.current, 'brain');
     });
+    return () => cancelAnimationFrame(raf);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // 2. Disable pointer events for all background layers/outlines by default
-    svg.querySelectorAll('*').forEach(el => {
-      (el as HTMLElement).style.pointerEvents = 'none';
-    });
+  // ── Helper: get the SVG for the currently active view ─────────────────────
+  const getActiveSvg = useCallback((): SVGSVGElement | null => {
+    const ref = viewRef.current === 'body' ? bodyRef.current : brainRef.current;
+    return ref?.querySelector('svg') ?? null;
+  }, []);
 
-    // 3. Strip inline none fills/strokes from all UBERON elements and their children so they inherit
-    const allUberonElements = svg.querySelectorAll('[id^="UBERON"]');
-    allUberonElements.forEach(uberon => {
-      // Re-enable pointer events only for UBERON elements
-      (uberon as HTMLElement).style.pointerEvents = 'all';
-      
-      const descendants = uberon.querySelectorAll('*');
-      descendants.forEach(child => {
-        const htmlChild = child as HTMLElement;
-        htmlChild.style.pointerEvents = 'all';
-        if (htmlChild.style.fill === 'none') htmlChild.style.fill = '';
-        if (htmlChild.style.stroke === 'none') htmlChild.style.stroke = '';
-        child.removeAttribute('fill');
-        child.removeAttribute('stroke');
-      });
-    });
+  // ── React synthetic event handlers ────────────────────────────────────────
 
-    // 4. Apply default warm fills to every UBERON element
-    allUberonElements.forEach(el => {
-      const id = el.id;
-      const fill = ORGAN_DATABASE[id] ? C.defaultFill : C.unknown;
-      applyStyle(el, fill, C.defaultStroke);
-      el.setAttribute('cursor', 'pointer');
-      
-      // Ensure the UBERON element itself doesn't have an inline fill="none" attribute blocking inheritance
-      el.removeAttribute('fill');
-      el.removeAttribute('stroke');
-    });
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const svg = getActiveSvg();
+    if (!svg) return;
 
-    // Wire events
-    svg.addEventListener('mousemove', (e: Event) => {
-      const me = e as MouseEvent;
-      const target = (me.target as Element)?.closest('[id^="UBERON"]');
-      if (!target) {
-        setTooltip(t => ({ ...t, visible: false }));
-        if (hoveredId.current && hoveredId.current !== selectedId.current) {
-          const el = svg.querySelector(`#${hoveredId.current}`);
-          if (el) applyStyle(el, C.defaultFill, C.defaultStroke);
-        }
-        hoveredId.current = null;
-        return;
-      }
-      const id = target.id;
-      if (id !== hoveredId.current) {
-        // un-hover previous
-        if (hoveredId.current && hoveredId.current !== selectedId.current) {
-          const prev = svg.querySelector(`#${hoveredId.current}`);
-          if (prev) applyStyle(prev, C.defaultFill, C.defaultStroke);
-        }
-        hoveredId.current = id;
-        if (id !== selectedId.current) {
-          applyStyle(target, C.hoverFill, C.hoverStroke);
-          if (soundEnabled) playHover();
-        }
+    const uberonEl = (e.target as Element).closest('[id^="UBERON"]');
 
-        // Tooltip label: from SVG <title> or DB
-        const title = target.querySelector('title')?.textContent || ORGAN_DATABASE[id]?.name || id;
-        // Convert rect to tooltip position
-        const rect = (container.parentElement || container).getBoundingClientRect();
-        setTooltip({ visible: true, x: me.clientX - rect.left + 12, y: me.clientY - rect.top - 10, label: title });
-      }
-    });
-
-    svg.addEventListener('mouseleave', () => {
-      setTooltip(t => ({ ...t, visible: false }));
+    // No UBERON target or unknown organ → hide tooltip, un-hover previous
+    if (!uberonEl || !ORGAN_DATABASE[uberonEl.id]) {
+      if (tooltip.visible) setTooltip(t => ({ ...t, visible: false }));
       if (hoveredId.current && hoveredId.current !== selectedId.current) {
-        const el = svg.querySelector(`#${hoveredId.current}`);
-        if (el) applyStyle(el, C.defaultFill, C.defaultStroke);
+        const prev = svg.querySelector('#' + CSS.escape(hoveredId.current));
+        if (prev) applyFill(prev, C.defaultFill, C.defaultStroke);
       }
       hoveredId.current = null;
-    });
+      return;
+    }
 
-    svg.addEventListener('click', (e: Event) => {
-      const me = e as MouseEvent;
-      const target = (me.target as Element)?.closest('[id^="UBERON"]');
-      if (!target) { return; }
-      const id = target.id;
-      // Un-select previous
-      if (selectedId.current && selectedId.current !== id) {
-        const prev = svg.querySelector(`#${selectedId.current}`);
-        if (prev) applyStyle(prev, C.defaultFill, C.defaultStroke);
-      }
-      selectedId.current = id;
-      applyStyle(target, C.selectedFill, C.selectedStroke);
-      if (soundEnabled) playSelect();
-      const data = ORGAN_DATABASE[id];
-      setSelected(data || null);
-      setActiveTab('Overview');
-    });
-  }, [soundEnabled]);
+    const id = uberonEl.id;
 
-  // ── Re-init when view switches ───────────────────────────────────────────
-  useEffect(() => {
-    // Initialise both SVGs safely on mount to prevent double listeners
-    const timer = setTimeout(() => {
-      initSvg(bodyRef.current);
-      initSvg(brainRef.current);
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [initSvg]);
+    // Same organ — just update tooltip coords
+    if (id === hoveredId.current) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setTooltip(t => ({ ...t, x: e.clientX - rect.left + 14, y: e.clientY - rect.top - 8 }));
+      return;
+    }
 
-  // ── Navigate to a related structure ─────────────────────────────────────
-  const navigateTo = (id: string) => {
+    // Un-hover previous
+    if (hoveredId.current && hoveredId.current !== selectedId.current) {
+      const prev = svg.querySelector('#' + CSS.escape(hoveredId.current));
+      if (prev) applyFill(prev, C.defaultFill, C.defaultStroke);
+    }
+
+    hoveredId.current = id;
+    if (id !== selectedId.current) applyFill(uberonEl, C.hoverFill, C.hoverStroke);
+
+    const label = uberonEl.querySelector('title')?.textContent?.trim()
+      || ORGAN_DATABASE[id]?.name || id;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltip({ visible: true, x: e.clientX - rect.left + 14, y: e.clientY - rect.top - 8, label });
+  }, [getActiveSvg, tooltip.visible]);
+
+  const handleMouseLeave = useCallback(() => {
+    const svg = getActiveSvg();
+    setTooltip(t => ({ ...t, visible: false }));
+    if (svg && hoveredId.current && hoveredId.current !== selectedId.current) {
+      const prev = svg.querySelector('#' + CSS.escape(hoveredId.current));
+      if (prev) applyFill(prev, C.defaultFill, C.defaultStroke);
+    }
+    hoveredId.current = null;
+  }, [getActiveSvg]);
+
+  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const svg = getActiveSvg();
+    if (!svg) return;
+
+    const uberonEl = (e.target as Element).closest('[id^="UBERON"]');
+    if (!uberonEl) return;
+
+    const id = uberonEl.id;
+    const data = ORGAN_DATABASE[id];
+    if (!data) return; // Not a known organ — ignore
+
+    // Un-select previous
+    if (selectedId.current && selectedId.current !== id) {
+      const prev = svg.querySelector('#' + CSS.escape(selectedId.current));
+      if (prev) applyFill(prev, C.defaultFill, C.defaultStroke);
+    }
+
+    selectedId.current = id;
+    applyFill(uberonEl, C.selectedFill, C.selectedStroke);
+
+    // These React state updates WILL trigger a re-render correctly
+    setSelected(data);
+    setActiveTab('Overview');
+  }, [getActiveSvg]);
+
+  // ── Switch view (tab button) ──────────────────────────────────────────────
+  const switchView = useCallback((v: View) => {
+    // Un-highlight any selected element in the current view
+    const currentSvg = getActiveSvg();
+    if (currentSvg && selectedId.current) {
+      const prev = currentSvg.querySelector('#' + CSS.escape(selectedId.current));
+      if (prev) applyFill(prev, C.defaultFill, C.defaultStroke);
+    }
+    hoveredId.current  = null;
+    selectedId.current = null;
+    setView(v);
+    setSelected(null);
+    setActiveTab('Overview');
+    setTooltip(t => ({ ...t, visible: false }));
+  }, [getActiveSvg]);
+
+  // ── Navigate to a related structure ──────────────────────────────────────
+  const navigateTo = useCallback((id: string) => {
     const data = ORGAN_DATABASE[id];
     if (!data) return;
-    if (data.view !== view) {
-      setView(data.view);
-      // Defer selection until SVG is reinitialised
-      setTimeout(() => {
-        const ref = data.view === 'body' ? bodyRef.current : brainRef.current;
-        if (!ref) return;
-        const svg = ref.querySelector('svg');
-        if (!svg) return;
-        if (selectedId.current) {
-          const prev = svg.querySelector(`#${selectedId.current}`);
-          if (prev) applyStyle(prev, C.defaultFill, C.defaultStroke);
-        }
-        const el = svg.querySelector(`#${id}`);
-        if (el) applyStyle(el, C.selectedFill, C.selectedStroke);
-        selectedId.current = id;
-        setSelected(data);
-        setActiveTab('Overview');
-        if (soundEnabled) playSelect();
-      }, 200);
-    } else {
-      const ref = view === 'body' ? bodyRef.current : brainRef.current;
-      const svg = ref?.querySelector('svg');
+
+    const doSelect = () => {
+      const ref = data.view === 'body' ? bodyRef.current : brainRef.current;
+      const svg = ref?.querySelector('svg') as SVGSVGElement | null;
       if (!svg) return;
       if (selectedId.current) {
-        const prev = svg.querySelector(`#${selectedId.current}`);
-        if (prev) applyStyle(prev, C.defaultFill, C.defaultStroke);
+        const prev = svg.querySelector('#' + CSS.escape(selectedId.current));
+        if (prev) applyFill(prev, C.defaultFill, C.defaultStroke);
       }
-      const el = svg.querySelector(`#${id}`);
-      if (el) applyStyle(el, C.selectedFill, C.selectedStroke);
+      const el = svg.querySelector('#' + CSS.escape(id));
+      if (el) applyFill(el, C.selectedFill, C.selectedStroke);
       selectedId.current = id;
       setSelected(data);
       setActiveTab('Overview');
-      if (soundEnabled) playSelect();
+    };
+
+    if (data.view !== viewRef.current) {
+      setView(data.view);
+      setTimeout(doSelect, 50);
+    } else {
+      doSelect();
     }
-  };
+  }, []);
 
-  const switchTab = (t: Tab) => {
-    setActiveTab(t);
-    if (soundEnabled) playTab();
-  };
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="anatomy-root" style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0', color: '#2c2016', fontFamily: '"IBM Plex Sans", system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', color: '#2c2016', fontFamily: '"IBM Plex Sans", system-ui, sans-serif' }}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: '2rem', fontWeight: 700, color: '#2c2016', margin: 0 }}>
           Anatomy Explorer
@@ -241,35 +240,41 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
         </p>
       </div>
 
-      {/* ── Main layout ── */}
+      {/* Main layout */}
       <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '1.5rem', flex: 1, minHeight: 0 }}>
 
-        {/* ── Left: SVG Panel ── */}
+        {/* Left: SVG panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
 
-          {/* View selector */}
+          {/* View switcher */}
           <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid #c4b49a' }}>
             {(['body', 'brain'] as View[]).map(v => (
-              <button
-                key={v}
-                onClick={() => { setView(v); setSelected(null); selectedId.current = null; hoveredId.current = null; }}
-                style={{
-                  flex: 1, padding: '0.5rem', border: 'none', cursor: 'pointer',
-                  background: view === v ? '#3d2b1a' : '#f5f0e8',
-                  color: view === v ? '#f5f0e8' : '#5c4a35',
-                  fontFamily: '"IBM Plex Sans", sans-serif',
-                  fontWeight: view === v ? 600 : 400,
-                  fontSize: '0.85rem', textTransform: 'capitalize',
-                  transition: 'background 0.2s, color 0.2s',
-                }}
-              >
+              <button key={v} onClick={() => switchView(v)} style={{
+                flex: 1, padding: '0.5rem', border: 'none', cursor: 'pointer',
+                background: view === v ? '#3d2b1a' : '#f5f0e8',
+                color: view === v ? '#f5f0e8' : '#5c4a35',
+                fontFamily: '"IBM Plex Sans", sans-serif',
+                fontWeight: view === v ? 600 : 400,
+                fontSize: '0.85rem', textTransform: 'capitalize',
+                transition: 'background 0.2s, color 0.2s',
+              }}>
                 {v === 'body' ? '⬬ Body' : '◉ Brain'}
               </button>
             ))}
           </div>
 
-          {/* SVG container with tooltip */}
-          <div style={{ position: 'relative', flex: 1, background: '#faf8f3', borderRadius: '12px', border: '1px solid #d4c4a8', overflow: 'visible', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
+          {/* SVG container — events live HERE (React synthetic) */}
+          <div
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            onClick={handleClick}
+            style={{
+              position: 'relative', flex: 1, background: '#faf8f3',
+              borderRadius: '12px', border: '1px solid #d4c4a8',
+              display: 'flex', justifyContent: 'center', alignItems: 'center',
+              padding: '1rem', cursor: 'default', overflow: 'hidden',
+            }}
+          >
             {/* Floating tooltip */}
             {tooltip.visible && (
               <div style={{
@@ -283,18 +288,18 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
               </div>
             )}
 
-            {/* Body SVG */}
+            {/* Body SVG — always mounted, shown/hidden via display */}
             <div
               ref={bodyRef}
               style={{ display: view === 'body' ? 'flex' : 'none', justifyContent: 'center', width: '100%' }}
-              dangerouslySetInnerHTML={{ __html: bodySvg.replace(/<svg/, `<svg style="max-height:580px;width:100%;height:auto;"`) }}
+              dangerouslySetInnerHTML={{ __html: bodyHtml }}
             />
 
-            {/* Brain SVG */}
+            {/* Brain SVG — always mounted, shown/hidden via display */}
             <div
               ref={brainRef}
               style={{ display: view === 'brain' ? 'flex' : 'none', justifyContent: 'center', width: '100%' }}
-              dangerouslySetInnerHTML={{ __html: brainSvg.replace(/<svg/, `<svg style="max-height:580px;width:100%;height:auto;"`) }}
+              dangerouslySetInnerHTML={{ __html: brainHtml }}
             />
           </div>
 
@@ -308,14 +313,11 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
           </div>
         </div>
 
-        {/* ── Right: Info Panel ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0', background: '#faf8f3', borderRadius: '12px', border: '1px solid #d4c4a8', overflow: 'hidden' }}>
-
+        {/* Right: Info panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#faf8f3', borderRadius: '12px', border: '1px solid #d4c4a8', overflow: 'hidden' }}>
           {!selected ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem', textAlign: 'center' }}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#e8dece', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', fontSize: '1.5rem' }}>
-                ⬡
-              </div>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#e8dece', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', fontSize: '1.5rem' }}>⬡</div>
               <p style={{ fontFamily: '"Cormorant Garamond", serif', fontSize: '1.4rem', fontWeight: 600, color: '#5c4a35', marginBottom: '0.5rem' }}>
                 Select a Structure
               </p>
@@ -339,38 +341,32 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
                   <span style={{
                     fontSize: '0.7rem', padding: '3px 10px', borderRadius: '20px',
                     background: selected.view === 'body' ? '#3d2b1a' : '#1a2b3d',
-                    color: '#f5f0e8', fontWeight: 500, textTransform: 'capitalize', alignSelf: 'flex-start'
+                    color: '#f5f0e8', fontWeight: 500, textTransform: 'capitalize', alignSelf: 'flex-start',
                   }}>
                     {selected.view}
                   </span>
                 </div>
 
                 {/* Tabs */}
-                <div style={{ display: 'flex', gap: 0, marginTop: '0.75rem' }}>
+                <div style={{ display: 'flex', marginTop: '0.75rem' }}>
                   {tabs.map(t => (
-                    <button
-                      key={t}
-                      onClick={() => switchTab(t)}
-                      style={{
-                        padding: '0.45rem 1rem', border: 'none', cursor: 'pointer',
-                        background: 'transparent',
-                        borderBottom: activeTab === t ? '2px solid #9e3d22' : '2px solid transparent',
-                        color: activeTab === t ? '#9e3d22' : '#7a6f5e',
-                        fontFamily: '"IBM Plex Sans", sans-serif',
-                        fontWeight: activeTab === t ? 600 : 400,
-                        fontSize: '0.82rem', transition: 'color 0.15s, border-color 0.15s',
-                      }}
-                    >
+                    <button key={t} onClick={() => setActiveTab(t)} style={{
+                      padding: '0.45rem 1rem', border: 'none', cursor: 'pointer', background: 'transparent',
+                      borderBottom: activeTab === t ? '2px solid #9e3d22' : '2px solid transparent',
+                      color: activeTab === t ? '#9e3d22' : '#7a6f5e',
+                      fontFamily: '"IBM Plex Sans", sans-serif',
+                      fontWeight: activeTab === t ? 600 : 400,
+                      fontSize: '0.82rem', transition: 'color 0.15s, border-color 0.15s',
+                    }}>
                       {t}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Tab Content */}
+              {/* Tab content */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
 
-                {/* OVERVIEW */}
                 {activeTab === 'Overview' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <p style={{ fontSize: '0.88rem', lineHeight: 1.75, color: '#3a2e22', margin: 0 }}>
@@ -379,87 +375,64 @@ export function AnatomyExplorer({ bodySvg, brainSvg, soundEnabled }: Props) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
                       {selected.overview.stats.map(s => (
                         <div key={s.label} style={{ background: '#f0ebe0', borderRadius: '8px', padding: '0.7rem 0.9rem', border: '1px solid #ddd0b8' }}>
-                          <div style={{ fontSize: '0.68rem', color: '#8a7a66', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
-                            {s.label}
-                          </div>
-                          <div style={{ fontSize: '0.95rem', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, color: '#2c2016' }}>
-                            {s.value}
-                          </div>
+                          <div style={{ fontSize: '0.68rem', color: '#8a7a66', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>{s.label}</div>
+                          <div style={{ fontSize: '0.95rem', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, color: '#2c2016' }}>{s.value}</div>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* FUNCTION */}
                 {activeTab === 'Function' && (
                   <p style={{ fontSize: '0.88rem', lineHeight: 1.85, color: '#3a2e22', margin: 0 }}>
                     {selected.function}
                   </p>
                 )}
 
-                {/* CLINICAL */}
                 {activeTab === 'Clinical' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div>
-                      <p style={{ fontSize: '0.73rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a7a66', margin: '0 0 0.5rem' }}>
-                        Associated Conditions
-                      </p>
+                      <p style={{ fontSize: '0.73rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a7a66', margin: '0 0 0.5rem' }}>Associated Conditions</p>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                         {selected.clinical.conditions.map(c => (
-                          <span key={c} style={{
-                            fontSize: '0.78rem', padding: '3px 10px', borderRadius: '20px',
-                            border: '1px solid #c9a87a', background: '#f5ede0', color: '#6b4a1e'
-                          }}>
+                          <span key={c} style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '20px', border: '1px solid #c9a87a', background: '#f5ede0', color: '#6b4a1e' }}>
                             {c}
                           </span>
                         ))}
                       </div>
                     </div>
-                    <div style={{
-                      background: '#fdf7ee', border: '1px solid #c9a87a',
-                      borderLeft: '3px solid #8a4e12', borderRadius: '6px', padding: '1rem',
-                    }}>
-                      <p style={{ fontSize: '0.83rem', lineHeight: 1.8, color: '#3a2e22', margin: 0 }}>
-                        {selected.clinical.note}
-                      </p>
+                    <div style={{ background: '#fdf7ee', border: '1px solid #c9a87a', borderLeft: '3px solid #8a4e12', borderRadius: '6px', padding: '1rem' }}>
+                      <p style={{ fontSize: '0.83rem', lineHeight: 1.8, color: '#3a2e22', margin: 0 }}>{selected.clinical.note}</p>
                     </div>
                   </div>
                 )}
 
-                {/* RELATED */}
                 {activeTab === 'Related' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     {selected.related.length === 0 ? (
                       <p style={{ color: '#8a7a66', fontSize: '0.85rem' }}>No linked structures.</p>
-                    ) : (
-                      selected.related.map(id => {
-                        const rel = ORGAN_DATABASE[id];
-                        return (
-                          <button
-                            key={id}
-                            onClick={() => navigateTo(id)}
-                            style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid #ddd0b8',
-                              background: '#f5f0e8', cursor: 'pointer', textAlign: 'left', width: '100%',
-                              transition: 'background 0.15s, border-color 0.15s',
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#ede5d6'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#c9a87a'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f5f0e8'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#ddd0b8'; }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: '0.86rem', color: '#3a2e22' }}>{rel?.name || id}</div>
-                              <div style={{ fontSize: '0.7rem', fontFamily: '"IBM Plex Mono", monospace', color: '#8a7a66' }}>{id.replace('_', ':')}</div>
-                            </div>
-                            <div style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px',
-                              background: rel?.view === 'body' ? '#3d2b1a' : '#1a2b3d', color: '#f5f0e8' }}>
-                              {rel?.view || '—'}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
+                    ) : selected.related.map(id => {
+                      const rel = ORGAN_DATABASE[id];
+                      return (
+                        <button key={id} onClick={() => navigateTo(id)} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '0.65rem 1rem', borderRadius: '8px', border: '1px solid #ddd0b8',
+                          background: '#f5f0e8', cursor: 'pointer', textAlign: 'left', width: '100%',
+                          transition: 'background 0.15s, border-color 0.15s',
+                        }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#ede5d6'; (e.currentTarget as HTMLElement).style.borderColor = '#c9a87a'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f5f0e8'; (e.currentTarget as HTMLElement).style.borderColor = '#ddd0b8'; }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.86rem', color: '#3a2e22' }}>{rel?.name || id}</div>
+                            <div style={{ fontSize: '0.7rem', fontFamily: '"IBM Plex Mono", monospace', color: '#8a7a66' }}>{id.replace('_', ':')}</div>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: rel?.view === 'body' ? '#3d2b1a' : '#1a2b3d', color: '#f5f0e8' }}>
+                            {rel?.view || '—'}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

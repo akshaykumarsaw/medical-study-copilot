@@ -13,8 +13,12 @@ export default function AnatomyPage() {
     'node_modules/@ebi-gene-expression-group/anatomogram/lib/svg'
   );
 
-  const bodySvg  = readFileSync(join(svgDir, 'homo_sapiens.male.svg'),  'utf8');
-  const brainSvg = readFileSync(join(svgDir, 'homo_sapiens.brain.svg'), 'utf8');
+  // Strip the EBI licence anchor (the green © icon) before sending to the client
+  const stripLicenceIcon = (svg: string) =>
+    svg.replace(/<a[^>]*licence\.html[^>]*>[\s\S]*?<\/a>/gi, '');
+
+  const bodySvg  = stripLicenceIcon(readFileSync(join(svgDir, 'homo_sapiens.male.svg'),  'utf8'));
+  const brainSvg = stripLicenceIcon(readFileSync(join(svgDir, 'homo_sapiens.brain.svg'), 'utf8'));
 
   return (
     <div style={{ height: 'calc(100vh - 5rem)', padding: '1.5rem 2rem', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
